@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# py2app / build artifacts
+build/
+dist/
+.build-venv/
+.eggs/
+
+# macOS
+.DS_Store
