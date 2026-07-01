@@ -1,0 +1,14 @@
+# Claude Code notification sounds — edit these paths to change the audio.
+# Any file afplay can play works (.aiff/.wav/.mp3/.m4a), including a custom one.
+# Built-in macOS sounds: /System/Library/Sounds/{Basso,Blow,Bottle,Frog,Funk,
+#   Glass,Hero,Morse,Ping,Pop,Purr,Sosumi,Submarine,Tink}.aiff
+# Set a value to "" to silence that event.
+
+# Played when Claude finishes a turn:
+STOP_SOUND=/System/Library/Sounds/Submarine.aiff
+
+# Played when Claude needs your input or a permission decision:
+NOTIFY_SOUND=/System/Library/Sounds/Glass.aiff
+
+# Example — custom sound:
+# STOP_SOUND=$HOME/Sounds/done.wav
