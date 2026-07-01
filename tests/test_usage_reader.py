@@ -3,9 +3,11 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import config
 import pricing
 import usage_reader
 
@@ -116,6 +118,85 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(data["session"]["tokens"], 2_000_000)
         # Haiku: $1 input + $5 output
         self.assertAlmostEqual(data["session"]["cost"], 6.0)
+
+
+class BreakdownTest(unittest.TestCase):
+    def test_breakdown_categories_and_costs(self):
+        usage = {
+            "input_tokens": 1_000_000,
+            "output_tokens": 1_000_000,
+            "cache_read_input_tokens": 1_000_000,
+            "cache_creation": {
+                "ephemeral_5m_input_tokens": 1_000_000,
+                "ephemeral_1h_input_tokens": 0,
+            },
+        }
+        bd = pricing.breakdown_for("claude-opus-4-6", usage)
+        self.assertAlmostEqual(bd["input"]["cost"], 5.0)
+        self.assertAlmostEqual(bd["output"]["cost"], 25.0)
+        self.assertAlmostEqual(bd["cache_write"]["cost"], 5.0 * 1.25)
+        self.assertAlmostEqual(bd["cache_read"]["cost"], 5.0 * 0.1)
+        # cost_for is the sum of the breakdown — never drifts.
+        self.assertAlmostEqual(
+            pricing.cost_for("claude-opus-4-6", usage),
+            sum(c["cost"] for c in bd.values()),
+        )
+
+    def test_collect_aggregates_breakdown(self):
+        with tempfile.TemporaryDirectory() as d:
+            usage = {"input_tokens": 1_000_000, "cache_read_input_tokens": 2_000_000}
+            line = _assistant_line("s1", "2026-06-01T00:00:00Z", "claude-opus-4-6", usage)
+            _write(d, "a.jsonl", [line])
+            data = usage_reader.collect(d)
+        bd = data["total"]["breakdown"]
+        self.assertEqual(bd["input"]["tokens"], 1_000_000)
+        self.assertEqual(bd["cache_read"]["tokens"], 2_000_000)
+        self.assertEqual(bd["output"]["tokens"], 0)
+
+
+class WindowsTest(unittest.TestCase):
+    def test_rolling_windows_filter_by_time(self):
+        now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=timezone.utc)
+        recent = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        mid = (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        old = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with tempfile.TemporaryDirectory() as d:
+            _write(d, "a.jsonl", [
+                _assistant_line("s", recent, "claude-haiku-4-5",
+                                {"input_tokens": 1_000_000}, "m1", "r1"),
+                _assistant_line("s", mid, "claude-haiku-4-5",
+                                {"input_tokens": 2_000_000}, "m2", "r2"),
+                _assistant_line("s", old, "claude-haiku-4-5",
+                                {"input_tokens": 4_000_000}, "m3", "r3"),
+            ])
+            data = usage_reader.collect(d, now=now)
+        # 5h window: only the 1h-old message.
+        self.assertEqual(data["windows"]["session"]["tokens"], 1_000_000)
+        # 7d window: 1h-old + 2d-old, not the 30d-old.
+        self.assertEqual(data["windows"]["weekly"]["tokens"], 3_000_000)
+
+    def test_pct_none_when_no_limit(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = usage_reader.collect(d)
+        # Defaults ship with no limits set.
+        self.assertIsNone(data["windows"]["session"]["pct"])
+        self.assertIsNone(data["windows"]["weekly"]["pct"])
+
+    def test_pct_computed_when_limit_set(self):
+        now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=timezone.utc)
+        recent = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        original = config.WEEKLY_TOKEN_LIMIT
+        config.WEEKLY_TOKEN_LIMIT = 4_000_000
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                _write(d, "a.jsonl", [
+                    _assistant_line("s", recent, "claude-haiku-4-5",
+                                    {"input_tokens": 1_000_000}, "m1", "r1"),
+                ])
+                data = usage_reader.collect(d, now=now)
+            self.assertAlmostEqual(data["windows"]["weekly"]["pct"], 25.0)
+        finally:
+            config.WEEKLY_TOKEN_LIMIT = original
 
 
 if __name__ == "__main__":

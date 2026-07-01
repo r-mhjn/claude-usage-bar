@@ -48,16 +48,19 @@ def _match(model):
     return best
 
 
-def cost_for(model, usage):
-    """Cost in USD for one assistant message's token usage.
+# Breakdown category order (used by the UI).
+CATEGORIES = ("input", "output", "cache_write", "cache_read")
 
-    `usage` is the raw dict from message.usage. Unknown models cost $0
-    (tokens are still counted elsewhere) so a new model never crashes the app.
+
+def breakdown_for(model, usage):
+    """Per-category (tokens, cost) for one assistant message.
+
+    Returns {category: {"tokens": int, "cost": float}} for the four classes:
+    input, output, cache_write (5m + 1h), cache_read. Unknown models yield
+    correct token counts and $0 cost, so a new model never crashes the app.
     """
     rates = _match(model)
-    if rates is None:
-        return 0.0
-    input_rate, output_rate = rates
+    input_rate, output_rate = rates if rates else (0.0, 0.0)
 
     input_tokens = usage.get("input_tokens", 0) or 0
     output_tokens = usage.get("output_tokens", 0) or 0
@@ -65,9 +68,9 @@ def cost_for(model, usage):
 
     # Split cache creation into 5m / 1h when the breakdown is present;
     # otherwise treat the whole amount as 5m writes.
-    breakdown = usage.get("cache_creation") or {}
-    write_5m = breakdown.get("ephemeral_5m_input_tokens")
-    write_1h = breakdown.get("ephemeral_1h_input_tokens")
+    creation = usage.get("cache_creation") or {}
+    write_5m = creation.get("ephemeral_5m_input_tokens")
+    write_1h = creation.get("ephemeral_1h_input_tokens")
     if write_5m is None and write_1h is None:
         write_5m = usage.get("cache_creation_input_tokens", 0) or 0
         write_1h = 0
@@ -75,14 +78,33 @@ def cost_for(model, usage):
         write_5m = write_5m or 0
         write_1h = write_1h or 0
 
-    cost = (
-        input_tokens * input_rate
-        + output_tokens * output_rate
-        + write_5m * input_rate * CACHE_WRITE_5M_MULT
-        + write_1h * input_rate * CACHE_WRITE_1H_MULT
-        + cache_read * input_rate * CACHE_READ_MULT
-    )
-    return cost / _MILLION
+    return {
+        "input": {
+            "tokens": input_tokens,
+            "cost": input_tokens * input_rate / _MILLION,
+        },
+        "output": {
+            "tokens": output_tokens,
+            "cost": output_tokens * output_rate / _MILLION,
+        },
+        "cache_write": {
+            "tokens": write_5m + write_1h,
+            "cost": (
+                write_5m * input_rate * CACHE_WRITE_5M_MULT
+                + write_1h * input_rate * CACHE_WRITE_1H_MULT
+            )
+            / _MILLION,
+        },
+        "cache_read": {
+            "tokens": cache_read,
+            "cost": cache_read * input_rate * CACHE_READ_MULT / _MILLION,
+        },
+    }
+
+
+def cost_for(model, usage):
+    """Total cost in USD for one message (sum of all categories)."""
+    return sum(c["cost"] for c in breakdown_for(model, usage).values())
 
 
 def tokens_for(usage):

@@ -4,25 +4,62 @@ A lightweight macOS menu bar app that shows your Claude Code token usage and
 cost — for the current session and all-time — by reading the JSONL logs
 Claude Code writes to `~/.claude/projects/`.
 
-The menu bar shows an icon (`◐`); click it for the breakdown:
+The menu bar shows a live status emoji + spend (e.g. `🟡 $22.08`); click it
+for the full breakdown:
 
 ```
-Current Session
-  Tokens   1.8M
-  Cost     $3.83
+🎯  Current Session
+     🪙  Tokens   15.8M
+     💰  Cost     $22.08
+        ⌨️  Input        25,063  ·  $0.13
+        📤  Output       72,448  ·  $1.81
+        📝  Cache write  1.29M   ·  $12.95
+        ⚡  Cache read   14.40M  ·  $7.20
 ─────────────────
-All Time
-  Tokens   1.41B
-  Cost     $1,522.58
+🌍  All Time
+     🪙  Tokens   678.5M
+     💰  Cost     $832.83
+        ⌨️  Input        975,985 ·  $4.87
+        📤  Output       3.24M   ·  $79.70
+        📝  Cache write  48.81M  ·  $449.76
+        ⚡  Cache read   625.51M ·  $298.50
 ─────────────────
-Updated 3s ago
-Refresh now
-Quit
+📊  Usage Windows
+     ⏳  Session (5h)   31.3M  ·  $50.00
+        (set limit in config.py for %)
+     📅  Weekly (7d)    204.2M ·  $243.50
+        🟢 ▓▓▓░░░░░░░ 34.0%
+─────────────────
+⏱  Updated just now
+🔄  Refresh now
+🚪  Quit
 ```
 
 - **Current Session** = the conversation (sessionId) with the most recent
   activity, updated live as you work.
 - **All Time** = every session across every project on this machine.
+- **Cost breakdown** splits each total into input / output / **cache write**
+  (1.25× input for 5-min, 2× for 1-hour) / **cache read** (0.1× input). For a
+  typical Claude Code session, cache reads/writes are the bulk of the cost.
+- **Usage Windows** = rolling **5-hour** ("session") and **7-day** ("weekly")
+  spans, mirroring the windows Claude's own limits use.
+
+### Usage-% caveat & config
+
+The **official** session/weekly utilization percentages come from Claude
+Code's `/usage` command — Claude fetches those live from the API and they are
+**not stored on disk**, so this app cannot read them directly. Instead it
+computes the same rolling windows from your logs and shows `usage ÷ limit`
+against limits **you set** in `config.py`:
+
+```python
+SESSION_TOKEN_LIMIT = 300_000_000   # your plan's 5-hour token allowance
+WEEKLY_TOKEN_LIMIT  = 2_000_000_000 # your plan's weekly token allowance
+```
+
+Leave a limit as `None` to show raw window totals without a %. Run `/usage` in
+Claude Code to calibrate these to your plan; the menu bar then shows the % (and
+its progress bar) for whichever window has a limit set.
 
 ## Install as a macOS app (recommended)
 
