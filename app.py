@@ -71,32 +71,26 @@ def _cost_tier(cost):
 def _colors():
     if not HAVE_APPKIT:
         return {}
-    return {
-        "teal": NSColor.systemTealColor(),
-        "purple": NSColor.systemPurpleColor(),
-        "blue": NSColor.systemBlueColor(),
-        "green": NSColor.systemGreenColor(),
-        "yellow": NSColor.systemYellowColor(),
-        "orange": NSColor.systemOrangeColor(),
-        "red": NSColor.systemRedColor(),
-        "pink": NSColor.systemPinkColor(),
-        "grey": NSColor.secondaryLabelColor(),
-    }
+    # `label` is the system primary label color — the OS keeps it legible on
+    # the translucent (vibrancy) menu background regardless of what shows
+    # through. We use it for all text and let emoji carry the color.
+    return {"label": NSColor.labelColor()}
 
 
-def _style(item, text, color_name=None, bold=False):
-    """Set a menu item's title, colored/bold via NSAttributedString when
-    AppKit is present; otherwise fall back to plain text."""
+def _style(item, text, color_name="label", bold=False):
+    """Set a menu item's title, using a high-contrast system color + optional
+    bold via NSAttributedString. Falls back to plain text without AppKit."""
     item.title = text
     if not HAVE_APPKIT:
         return
     try:
-        size = 13.0
-        font = NSFont.boldSystemFontOfSize_(size) if bold else NSFont.menuFontOfSize_(0)
+        size = 14.0
+        font = NSFont.boldSystemFontOfSize_(size) if bold else NSFont.systemFontOfSize_(size)
         attrs = {NSFontAttributeName: font}
         palette = _style._palette
-        if color_name and color_name in palette:
-            attrs[NSForegroundColorAttributeName] = palette[color_name]
+        color = palette.get(color_name) or palette.get("label")
+        if color is not None:
+            attrs[NSForegroundColorAttributeName] = color
         astr = NSAttributedString.alloc().initWithString_attributes_(text, attrs)
         item._menuitem.setAttributedTitle_(astr)
     except Exception:
@@ -134,11 +128,11 @@ class UsageBarApp(rumps.App):
             self.quit_item,
         ]
 
-        # Static styling for headers and controls.
-        _style(self.session_header, "🎯  Current Session", "teal", bold=True)
-        _style(self.total_header, "🌍  All Time", "purple", bold=True)
-        _style(self.refresh_item, "🔄  Refresh now", "blue")
-        _style(self.quit_item, "🚪  Quit", "pink")
+        # Static styling for headers and controls (high-contrast, bold).
+        _style(self.session_header, "🎯  Current Session", bold=True)
+        _style(self.total_header, "🌍  All Time", bold=True)
+        _style(self.refresh_item, "🔄  Refresh now")
+        _style(self.quit_item, "🚪  Quit")
 
         self.refresh(None)
         self._timer = rumps.Timer(self.refresh, REFRESH_SECONDS)
@@ -158,19 +152,22 @@ class UsageBarApp(rumps.App):
         session = data["session"]
         total = data["total"]
 
-        tier_emoji, tier_color = _cost_tier(session["cost"])
+        sess_emoji, _ = _cost_tier(session["cost"])
+        total_emoji, _ = _cost_tier(total["cost"])
 
         # Live menu bar icon: status emoji + session cost.
-        self.title = f"{tier_emoji} {_fmt_cost(session['cost'])}"
+        self.title = f"{sess_emoji} {_fmt_cost(session['cost'])}"
 
-        _style(self.session_tokens, f"     🪙  Tokens    {_fmt_tokens(session['tokens'])}", "blue")
-        _style(self.session_cost, f"     💰  Cost       {_fmt_cost(session['cost'])}", tier_color)
+        # Text stays high-contrast (labelColor); the tier emoji carries the
+        # green/yellow/orange/red spend signal so nothing depends on hard-to-
+        # read colored text over the translucent menu background.
+        _style(self.session_tokens, f"     🪙  Tokens   {_fmt_tokens(session['tokens'])}")
+        _style(self.session_cost, f"     {sess_emoji}  Cost     {_fmt_cost(session['cost'])}", bold=True)
 
-        total_emoji, total_color = _cost_tier(total["cost"])
-        _style(self.total_tokens, f"     🪙  Tokens    {_fmt_tokens(total['tokens'])}", "blue")
-        _style(self.total_cost, f"     💸  Cost       {_fmt_cost(total['cost'])}", total_color)
+        _style(self.total_tokens, f"     🪙  Tokens   {_fmt_tokens(total['tokens'])}")
+        _style(self.total_cost, f"     {total_emoji}  Cost     {_fmt_cost(total['cost'])}", bold=True)
 
-        _style(self.updated, f"⏱  Updated {_fmt_age(0)}", "grey")
+        _style(self.updated, f"⏱  Updated {_fmt_age(0)}")
 
 
 if __name__ == "__main__":
