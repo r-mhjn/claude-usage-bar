@@ -180,16 +180,17 @@ class UsageBarApp(rumps.App):
         total = data["total"]
         win = data["windows"]
 
-        # Menu bar: prefer the weekly window % if a limit is set; else the
-        # session-window %; else the session (conversation) spend + tier.
+        # Menu bar (kept short to stay visible on a crowded/notched bar):
+        # prefer the weekly window % if a limit is set; else the session-window
+        # %; else the session (conversation) spend rounded to whole dollars.
         if win["weekly"]["pct"] is not None:
             p = win["weekly"]["pct"]
-            self.title = f"{_pct_tier(p)} {p:.0f}%wk"
+            self.title = f"{_pct_tier(p)} {p:.0f}%"
         elif win["session"]["pct"] is not None:
             p = win["session"]["pct"]
             self.title = f"{_pct_tier(p)} {p:.0f}%"
         else:
-            self.title = f"{_cost_tier(session['cost'])} {_fmt_cost(session['cost'])}"
+            self.title = f"{_cost_tier(session['cost'])} ${session['cost']:,.0f}"
 
         # Current session (the active conversation) + cost breakdown.
         _style(self.session_tokens, f"     🪙  Tokens   {_fmt_tokens(session['tokens'])}")
